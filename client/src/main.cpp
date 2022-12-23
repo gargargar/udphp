@@ -2,6 +2,7 @@
 #include <fcntl.h>
 #include <getopt.h>
 #include <linux/udp.h>
+#include <netdb.h>
 #include <poll.h>
 #include <sys/socket.h>
 #include <unistd.h>
@@ -130,7 +131,19 @@ std::tuple<sockaddr_in, MyUuid, ClientType, sockaddr_in> ParseArgs(
     std::string address = argv[optind + 1];
     auto pos = address.find_last_of(':');
     if (pos != std::string::npos) {
-      inet_pton(AF_INET, address.substr(0, pos).c_str(), &res_addr.sin_addr);
+      addrinfo hints{};
+      hints.ai_family = AF_INET;
+      hints.ai_protocol = IPPROTO_UDP;
+      addrinfo *addr_info = nullptr;
+
+      if (getaddrinfo(address.substr(0, pos).c_str(), nullptr, &hints, &addr_info) != 0 ||
+          addr_info == nullptr) {
+        perror("getaddrinfo failed");
+        exit(EXIT_FAILURE);
+      }
+      freeaddrinfo(addr_info);
+
+      std::memcpy(&res_addr, addr_info->ai_addr, sizeof(res_addr));
       res_addr.sin_port = htons(std::stoi(address.substr(pos + 1)));
     }
   }
@@ -242,11 +255,6 @@ int main(int argc, char *argv[]) {
         client_addr.sin_addr.s_addr = msg->ip_addr;
         client_addr.sin_port = msg->ip_port;
 
-        inet_ntop(client_addr.sin_family, &client_addr.sin_addr, addrstr,
-                  sizeof(addrstr));
-        std::cout << "CLIENT: " << addrstr << ":" << ntohs(client_addr.sin_port)
-                  << std::endl;
-
         // sendto to result
         if (client_type == kServer1_Resp) {
           SendRaw(raw_addr, client_addr, nullptr, 0);
@@ -276,6 +284,11 @@ int main(int argc, char *argv[]) {
 
         sendto(sockfd, &msg_conf, sizeof(msg_conf), 0,
                (sockaddr *)&connect_addr, sizeof(connect_addr));
+
+        inet_ntop(client_addr.sin_family, &client_addr.sin_addr, addrstr,
+                  sizeof(addrstr));
+        std::cout << "CLIENT: " << addrstr << ":" << ntohs(client_addr.sin_port)
+                  << std::endl;
 
         break;
       }

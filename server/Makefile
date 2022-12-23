@@ -5,7 +5,7 @@ SRC=./src
 TARGET=./out
 GCC = g++
 CFLAGS = -o $(TARGET)/udphp_server -std=c++20 -Wall -fdiagnostics-color=always \
-	-I ../include -O2
+	-I ../include -O2 -static
 #ARGS = 101
 RM = rm -rf
 

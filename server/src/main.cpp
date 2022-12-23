@@ -258,8 +258,10 @@ void ProcessMessage(int sockfd, const sockaddr_in &recv_addr,
 
       // check if already filled and old
       if (pair.addr2.sin_addr.s_addr != INADDR_NONE &&
-          msg->timestamp > it->timestamp2)
+          msg->timestamp > it->timestamp2) {
         pair.AddrClear1();
+        pair.AddrClear2();
+      }
 
       std::memcpy(&pair.addr2, &recv_addr, sizeof(recv_addr));
       pair.timestamp2 = msg->timestamp;
@@ -309,17 +311,14 @@ void ProcessMessage(int sockfd, const sockaddr_in &recv_addr,
 
     std::cout << "CONFIRMATION received" << std::endl;
 
-    MyUuid uuid = std::to_array((char(&)[16])msg->link_uuid);
-    auto it = m_pairs.find(uuid);
-    if (it != m_pairs.end()) {
-      auto &pair = const_cast<LinkItem &>(*it);
-      if (recv_addr == it->addr1 && msg->request_ts == it->timestamp2) {
-        pair.AddrClear2();
-      }
-      if (recv_addr == it->addr2 && msg->request_ts == it->timestamp1) {
-        pair.AddrClear1();
-      }
-    }
+    // MyUuid uuid = std::to_array((char(&)[16])msg->link_uuid);
+    // auto it = m_pairs.find(uuid);
+    // if (it != m_pairs.end()) {
+    //    if (recv_addr == it->addr1 && msg->request_ts == it->timestamp2) {
+    //    }
+    //    if (recv_addr == it->addr2 && msg->request_ts == it->timestamp1) {
+    //    }
+    // }
   } else {
     std::cout << "Invalid packet(" << msg_size << ") for message " << hdr->type;
   }
@@ -398,7 +397,7 @@ int main(int argc, char *argv[]) {
         ProcessMessage(sockfd, recv_addr, (MessageHdr *)buf, received);
       }
     } else if (res == 0) {
-      //std::cout << "15 seconds..." << std::endl;
+      // std::cout << "15 seconds..." << std::endl;
     } else {
       perror("poll failed");
       exit(EXIT_FAILURE);
