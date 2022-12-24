@@ -13,12 +13,17 @@
 #include <ctime>
 #include <iostream>
 #include <string_view>
-#include <tuple>
 #include <unordered_set>
 
 #include "../../include/protocol.hpp"
 
 using MyUuid = std::array<char, 16>;
+
+inline std::ostream &operator<<(std::ostream &os, const sockaddr_in &addr) {
+  char addrstr[100] = {};
+  inet_ntop(addr.sin_family, &addr.sin_addr, addrstr, sizeof(addrstr));
+  return os << addrstr << ':' << ntohs(addr.sin_port);
+}
 
 std::string string_to_hex(const std::string &input) {
   static const char hex_digits[] = "0123456789ABCDEF";
@@ -69,51 +74,52 @@ void SendRaw(const sockaddr_in &bind_addr, const sockaddr_in &connect_addr,
     perror("sendto(4) failed");
     exit(EXIT_FAILURE);
   }
+
+  close(rawfd);
 }
 
-std::tuple<sockaddr_in, MyUuid, ClientType, sockaddr_in> ParseArgs(
-    int argc, char *argv[]) {
-  sockaddr_in res_addr{};
-  sockaddr_in raw_addr{};
-  MyUuid res_uuid{};
-  ClientType res_type = kClient1;
-  res_addr.sin_family = AF_INET;
-  res_addr.sin_addr.s_addr = INADDR_NONE;
-  res_addr.sin_port = 0;
-  raw_addr.sin_family = AF_INET;
-  raw_addr.sin_addr.s_addr = INADDR_ANY;
-  raw_addr.sin_port = 0;
+struct ParsedArgs {
+  sockaddr_in bind_addr{.sin_family = AF_INET,
+                        .sin_addr = {.s_addr = INADDR_ANY}};
+  sockaddr_in connect_addr{.sin_family = AF_INET,
+                           .sin_addr = {.s_addr = INADDR_NONE}};
+  ClientType type = kClient1_Direct;
+  MyUuid uuid{};
+};
 
-  option long_options[] = {{"server", required_argument, 0, 's'},
+ParsedArgs ParseArgs(int argc, char *argv[]) {
+  ParsedArgs res{};
+
+  option long_options[] = {{"ip", required_argument, 0, 'i'},
                            {"port", required_argument, 0, 'p'},
                            {"client1", no_argument, 0, '1'},
                            {"client2", no_argument, 0, '2'},
                            {0, 0, 0, 0}};
 
   int param;
-  while ((param = getopt_long(argc, argv, "s:p:h12", long_options, nullptr)) !=
+  while ((param = getopt_long(argc, argv, "i:p:h12", long_options, nullptr)) !=
          -1) {
     switch (param) {
       case 'p':
-        raw_addr.sin_port = htons(std::stoi(optarg));
-        res_type = kServer1_Resp;
+        res.bind_addr.sin_port = htons(std::stoi(optarg));
         break;
-      case 's':
-        inet_pton(AF_INET, optarg, &raw_addr.sin_addr);
+      case 'i':
+        inet_pton(AF_INET, optarg, &res.bind_addr.sin_addr);
         break;
       case '1':
-        res_type = kClient1;
+        res.type = kClient1_Direct;
         break;
       case '2':
-        res_type = kClient2;
+        res.type = kClient2_Direct;
         break;
       case 'h':
         std::cout
             << "Options:\n"
-               " -s,   --server [value] ip mapping, server mode\n"
-               " -p,   --port [value]   port mapping, server mode\n"
-               " -1,   --client1        send request as client#1 (default)\n"
-               " -2,   --client2        send request as client#2\n"
+               " -h,   --help              this help\n"
+               " -s,   --server [value]    ip mapping, second request\n"
+               " -p,   --port [value]      port mapping, second request\n"
+               " -1,   --client1           send request as client#1 (default)\n"
+               " -2,   --client2           send request as client#2\n"
                " [uuid] [address:port]\n";
         exit(EXIT_SUCCESS);
         break;
@@ -126,7 +132,7 @@ std::tuple<sockaddr_in, MyUuid, ClientType, sockaddr_in> ParseArgs(
   if (optind + 2 == argc) {
     uuid_t myuuid;
     uuid_parse(argv[optind], myuuid);
-    res_uuid = std::to_array((char(&)[16])myuuid);
+    res.uuid = std::to_array((char(&)[16])myuuid);
 
     std::string address = argv[optind + 1];
     auto pos = address.find_last_of(':');
@@ -136,40 +142,40 @@ std::tuple<sockaddr_in, MyUuid, ClientType, sockaddr_in> ParseArgs(
       hints.ai_protocol = IPPROTO_UDP;
       addrinfo *addr_info = nullptr;
 
-      if (getaddrinfo(address.substr(0, pos).c_str(), nullptr, &hints, &addr_info) != 0 ||
+      if (getaddrinfo(address.substr(0, pos).c_str(),
+                      address.substr(pos + 1).c_str(), &hints,
+                      &addr_info) != 0 ||
           addr_info == nullptr) {
         perror("getaddrinfo failed");
         exit(EXIT_FAILURE);
       }
       freeaddrinfo(addr_info);
 
-      std::memcpy(&res_addr, addr_info->ai_addr, sizeof(res_addr));
-      res_addr.sin_port = htons(std::stoi(address.substr(pos + 1)));
+      std::memcpy(&res.connect_addr, addr_info->ai_addr,
+                  sizeof(res.connect_addr));
     }
   }
 
-  if (res_addr.sin_addr.s_addr == INADDR_NONE || res_addr.sin_port == 0) {
+  if (res.connect_addr.sin_addr.s_addr == INADDR_NONE ||
+      res.connect_addr.sin_port == 0) {
     std::cout << "Missing required [uuid] [address:port]" << std::endl;
     throw std::runtime_error("Missing required [uuid] [address:port]");
   }
 
-  return {std::move(res_addr), res_uuid, res_type, raw_addr};
+  if (res.bind_addr.sin_port != 0) {
+    res.type =
+        (res.type == kClient2_Direct ? kClient2_Control : kClient1_Control);
+  }
+
+  return res;
 }
 
 int main(int argc, char *argv[]) {
   std::cout << "udphp client v0.0.1" << std::endl;
 
-  auto [connect_addr, uuid, client_type, raw_addr] = ParseArgs(argc, argv);
+  const auto settings = ParseArgs(argc, argv);
 
   size_t unix_timestamp = std::chrono::seconds(std::time(nullptr)).count();
-  std::cout << "UNIXTIME: " << unix_timestamp << std::endl;
-
-  char addrstr[128] = {};
-  inet_ntop(connect_addr.sin_family, &connect_addr.sin_addr, addrstr,
-            sizeof(addrstr));
-
-  std::cout << "PARAM: " << addrstr << ":" << ntohs(connect_addr.sin_port)
-            << ", " << int(client_type) << std::endl;
 
   int sockfd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
   if (sockfd == -1) {
@@ -181,19 +187,22 @@ int main(int argc, char *argv[]) {
   setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &enable, sizeof(enable));
 
   MessageRequest msg_req{};
-  memcpy(msg_req.link_uuid, uuid.data(), uuid.size());
-  msg_req.client_type = client_type;
+  memcpy(msg_req.link_uuid, settings.uuid.data(), settings.uuid.size());
+  msg_req.client_type = settings.type;
   msg_req.timestamp = unix_timestamp;
 
-  if (sendto(sockfd, &msg_req, sizeof(msg_req), 0, (sockaddr *)&connect_addr,
-             sizeof(connect_addr)) <= 0) {
+  if (sendto(sockfd, &msg_req, sizeof(msg_req), 0,
+             (sockaddr *)&settings.connect_addr,
+             sizeof(settings.connect_addr)) <= 0) {
     perror("sendto failed");
     exit(EXIT_FAILURE);
   }
-  if (client_type == kServer1_Resp) {
+  if (settings.type == kClient1_Control || settings.type == kClient2_Control) {
     auto msg_req2{msg_req};
-    msg_req2.client_type = kServer1_NoResp;
-    SendRaw(raw_addr, connect_addr, &msg_req2, sizeof(msg_req2));
+    msg_req2.client_type =
+        (settings.type == kClient2_Control ? kClient2_Second : kClient1_Second);
+    SendRaw(settings.bind_addr, settings.connect_addr, &msg_req2,
+            sizeof(msg_req2));
   }
 
   struct sockaddr_in bind_addr;
@@ -202,9 +211,7 @@ int main(int argc, char *argv[]) {
     perror("getsockname failed");
     exit(EXIT_FAILURE);
   }
-  inet_ntop(bind_addr.sin_family, &bind_addr.sin_addr, addrstr, 100);
-  std::cout << "MYADDRESS: " << addrstr << ":" << ntohs(bind_addr.sin_port)
-            << std::endl;
+  std::cout << "MYADDRESS: " << bind_addr << std::endl;
 
   char buf[1024];
 
@@ -224,20 +231,17 @@ int main(int argc, char *argv[]) {
           exit(EXIT_FAILURE);
         }
 
-        inet_ntop(recv_addr.sin_family, &recv_addr.sin_addr, addrstr, 100);
+        std::cout << "RECEIVED " << recv_addr << " "
+                  << string_to_hex(std::string(buf, received)) << std::endl;
 
-        std::cout << "RECEIVED " << addrstr << ":" << ntohs(recv_addr.sin_port)
-                  << " " << string_to_hex(std::string(buf, received))
-                  << std::endl;
-
-        if (recv_addr != connect_addr) {
-          std::cout << "packet from invalid address, skipping" << std::endl;
+        if (recv_addr != settings.connect_addr) {
+          std::cout << recv_addr << "\tPacket from invalid address, skipping"
+                    << std::endl;
           continue;
         }
 
         if (received != sizeof(MessageResponse)) {
-          std::cout << addrstr << ":" << ntohs(recv_addr.sin_port)
-                    << "\tUnknown packet with size " << received;
+          std::cout << recv_addr << "\tUnknown packet with size " << received;
           exit(EXIT_FAILURE);
         }
 
@@ -245,8 +249,8 @@ int main(int argc, char *argv[]) {
         if (msg->type != MessageType::kResponse ||
             std::memcmp(msg->link_uuid, msg_req.link_uuid,
                         sizeof(msg_req.link_uuid)) != 0) {
-          std::cout << addrstr << ":" << ntohs(recv_addr.sin_port)
-                    << "\tInvlaid MessageResponse received " << received;
+          std::cout << recv_addr << "\tInvlaid MessageResponse received "
+                    << received;
           exit(EXIT_FAILURE);
         }
 
@@ -256,54 +260,48 @@ int main(int argc, char *argv[]) {
         client_addr.sin_port = msg->ip_port;
 
         // sendto to result
-        if (client_type == kServer1_Resp) {
-          SendRaw(raw_addr, client_addr, nullptr, 0);
-
-          inet_ntop(raw_addr.sin_family, &raw_addr.sin_addr, addrstr,
-                    sizeof(addrstr));
-          std::cout << "BIND: " << addrstr << ":" << ntohs(raw_addr.sin_port)
-                    << std::endl;
-
+        if (settings.type == kClient1_Control ||
+            settings.type == kClient2_Control) {
+          SendRaw(settings.bind_addr, client_addr, nullptr, 0);
+          std::cout << "BIND: " << settings.bind_addr << std::endl;
         } else {
           if (sendto(sockfd, nullptr, 0, 0, (sockaddr *)&client_addr,
                      sizeof(client_addr)) < 0) {
             perror("sendto(2) failed");
             exit(EXIT_FAILURE);
           }
-
-          inet_ntop(bind_addr.sin_family, &bind_addr.sin_addr, addrstr,
-                    sizeof(addrstr));
-          std::cout << "BIND: " << addrstr << ":" << ntohs(bind_addr.sin_port)
-                    << std::endl;
+          std::cout << "BIND: " << bind_addr << std::endl;
         }
 
         // send confirmation
         MessageConfirmation msg_conf{};
-        memcpy(msg_conf.link_uuid, uuid.data(), uuid.size());
+        memcpy(msg_conf.link_uuid, settings.uuid.data(), settings.uuid.size());
         msg_conf.request_ts = msg->request_ts;
 
         sendto(sockfd, &msg_conf, sizeof(msg_conf), 0,
-               (sockaddr *)&connect_addr, sizeof(connect_addr));
+               (sockaddr *)&settings.connect_addr,
+               sizeof(settings.connect_addr));
 
-        inet_ntop(client_addr.sin_family, &client_addr.sin_addr, addrstr,
-                  sizeof(addrstr));
-        std::cout << "CLIENT: " << addrstr << ":" << ntohs(client_addr.sin_port)
-                  << std::endl;
-
+        std::cout << "CLIENT: " << client_addr << std::endl;
         break;
       }
     } else if (res == 0) {
       std::cout << "try " << ++tries << ", repeat..." << std::endl;
 
       if (sendto(sockfd, &msg_req, sizeof(msg_req), 0,
-                 (sockaddr *)&connect_addr, sizeof(connect_addr)) <= 0) {
+                 (sockaddr *)&settings.connect_addr,
+                 sizeof(settings.connect_addr)) <= 0) {
         perror("sendto(3) failed");
         exit(EXIT_FAILURE);
       }
-      if (client_type == kServer1_Resp) {
+      if (settings.type == kClient1_Control ||
+          settings.type == kClient2_Control) {
         auto msg_req2{msg_req};
-        msg_req2.client_type = kServer1_NoResp;
-        SendRaw(raw_addr, connect_addr, &msg_req2, sizeof(msg_req2));
+        msg_req2.client_type =
+            (settings.type == kClient2_Control ? kClient2_Second
+                                               : kClient1_Second);
+        SendRaw(settings.bind_addr, settings.connect_addr, &msg_req2,
+                sizeof(msg_req2));
       }
     } else {
       perror("poll failed");

@@ -4,10 +4,12 @@
 enum MessageType : uint8_t { kRequest = 1, kResponse = 2, kConfirmation = 3 };
 
 enum ClientType : uint8_t {
-  kClient1 = 0,
-  kServer1_Resp = 1,
-  kServer1_NoResp = 2,
-  kClient2 = 3
+  kClient1_Direct = 0,   // no second request, with response
+  kClient1_Control = 1,  // has second request, with response
+  kClient1_Second = 2,   // it's second request, no response
+  kClient2_Direct = 3,
+  kClient2_Control = 4,
+  kClient2_Second = 5,
 };
 
 #pragma pack(push, 1)

@@ -4,8 +4,7 @@
 SRC=./src
 TARGET=./out
 GCC = g++
-CFLAGS = -o $(TARGET)/udphp_server -std=c++20 -Wall -fdiagnostics-color=always \
-	-I ../include -O2 -static
+CFLAGS = -o $(TARGET)/udphp_server -std=c++20 -Wall -fdiagnostics-color=always -I ../include -O2 -static -luuid
 #ARGS = 101
 RM = rm -rf
 
@@ -14,7 +13,7 @@ all: clean build# test
 build: main.cpp
 
 main.cpp:
-	$(GCC) $(CFLAGS) $(SRC)/main.cpp
+	$(GCC) $(SRC)/main.cpp $(CFLAGS)
 
 # test: main.cpp
 #     $(TARGET)/test_raw $(ARGS)
