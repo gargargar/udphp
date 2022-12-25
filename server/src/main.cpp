@@ -15,7 +15,7 @@
 #include <string_view>
 #include <unordered_set>
 
-#include "../../include/protocol.hpp"
+#include "protocol.hpp"
 
 constexpr size_t kMaxPairs = 1000;
 

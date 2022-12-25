@@ -4,7 +4,7 @@
 SRC=./src
 TARGET=./out
 GCC = g++
-CFLAGS = -o $(TARGET)/udphp_client -std=c++20 -Wall -I ./include -luuid
+CFLAGS = -o $(TARGET)/udphp_client -std=c++20 -Wall -I ../include -luuid
 #ARGS = 101
 RM = rm -rf
 
