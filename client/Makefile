@@ -13,10 +13,11 @@ all: clean build# test
 build: main.cpp
 
 main.cpp:
+	mkdir -p $(TARGET)
 	$(GCC) $(SRC)/main.cpp $(CFLAGS)
 
 # test: main.cpp
 #     $(TARGET)/test_raw $(ARGS)
 
 clean:
-	$(RM) $(TARGET)/*
+	$(RM) $(TARGET)/*.o

@@ -142,7 +142,7 @@ std::string LogPacket(const char *buf, size_t buf_size) {
       std::ostringstream ostr;
 
       MyUuid uuid = std::to_array((char(&)[16])hdr->link_uuid);
-      ostr  << uuid << '\t' << MessageType{hdr->type} << ", "
+      ostr << uuid << '\t' << MessageType{hdr->type} << ", "
            << string_to_hex(std::string(buf + sizeof(MessageHdr),
                                         buf_size - sizeof(MessageHdr)));
       return ostr.str();
@@ -318,17 +318,18 @@ void ProcessMessage(int sockfd, const sockaddr_in &recv_addr,
       it = m_pairs.emplace(LinkItem{uuid}).first;
       Log(recv_addr, '\t', uuid, "\tnew record");
     } else {
-      Log(recv_addr, '\t', uuid, "\tdata found, last_used updated");
+      Log(recv_addr, '\t', uuid, "\tdata found");
     }
 
     auto &pair = const_cast<LinkItem &>(*it);
 
-    pair.last_used = std::chrono::system_clock::now();
-
     if (msg->client_type == ClientType::kClient1_Direct ||
         msg->client_type == ClientType::kClient1_Control ||
         msg->client_type == ClientType::kClient1_Second) {
-      if (msg->timestamp < pair.timestamp1) return;
+      if (msg->timestamp < pair.timestamp1) {
+        Log(recv_addr, '\t', uuid, "\told request(1)");
+        return;
+      }
       // check if already filled and old
       if ((pair.addr1.sin_addr.s_addr != INADDR_NONE ||
            pair.addr1_second.sin_addr.s_addr != INADDR_NONE) &&
@@ -345,7 +346,10 @@ void ProcessMessage(int sockfd, const sockaddr_in &recv_addr,
     } else if (msg->client_type == ClientType::kClient2_Direct ||
                msg->client_type == ClientType::kClient2_Control ||
                msg->client_type == ClientType::kClient2_Second) {
-      if (msg->timestamp < pair.timestamp2) return;
+      if (msg->timestamp < pair.timestamp2) {
+        Log(recv_addr, '\t', uuid, "\told request(2)");
+        return;
+      }
       // check if already filled and old
       if ((pair.addr2.sin_addr.s_addr != INADDR_NONE ||
            pair.addr2_second.sin_addr.s_addr != INADDR_NONE) &&
@@ -365,6 +369,8 @@ void ProcessMessage(int sockfd, const sockaddr_in &recv_addr,
           ") for message kRequest");
       return;
     }
+
+    pair.last_used = std::chrono::system_clock::now();
 
     // check if all ready to answer
     if (pair.addr1.sin_addr.s_addr != INADDR_NONE &&

@@ -12,6 +12,7 @@
 #include <cstring>
 #include <ctime>
 #include <iostream>
+#include <random>
 #include <string_view>
 #include <unordered_set>
 
@@ -54,6 +55,9 @@ void SendRaw(const sockaddr_in &bind_addr, const sockaddr_in &connect_addr,
     exit(EXIT_FAILURE);
   }
 
+  int enable = 1;
+  setsockopt(rawfd, SOL_SOCKET, SO_REUSEADDR, &enable, sizeof(enable));
+
   if (bind(rawfd, (sockaddr *)&bind_addr, sizeof(bind_addr)) < 0) {
     perror("bind failed");
     exit(EXIT_FAILURE);
@@ -85,6 +89,7 @@ struct ParsedArgs {
                            .sin_addr = {.s_addr = INADDR_NONE}};
   ClientType type = kClient1_Direct;
   MyUuid uuid{};
+  size_t tries = 10;
 };
 
 ParsedArgs ParseArgs(int argc, char *argv[]) {
@@ -92,13 +97,14 @@ ParsedArgs ParseArgs(int argc, char *argv[]) {
 
   option long_options[] = {{"ip", required_argument, 0, 'i'},
                            {"port", required_argument, 0, 'p'},
+                           {"attempts", required_argument, 0, 'n'},
                            {"client1", no_argument, 0, '1'},
                            {"client2", no_argument, 0, '2'},
                            {0, 0, 0, 0}};
 
   int param;
-  while ((param = getopt_long(argc, argv, "i:p:h12", long_options, nullptr)) !=
-         -1) {
+  while ((param = getopt_long(argc, argv, "i:p:n:h12", long_options,
+                              nullptr)) != -1) {
     switch (param) {
       case 'p':
         res.bind_addr.sin_port = htons(std::stoi(optarg));
@@ -112,12 +118,17 @@ ParsedArgs ParseArgs(int argc, char *argv[]) {
       case '2':
         res.type = kClient2_Direct;
         break;
+      case 'n':
+        res.tries = std::stoul(optarg);
+        break;
       case 'h':
         std::cout
             << "Options:\n"
                " -h,   --help              this help\n"
-               " -s,   --server [value]    ip mapping, second request\n"
+               " -i,   --ip [value]        ip mapping, second request\n"
                " -p,   --port [value]      port mapping, second request\n"
+               " -n,   --attempts [value]  send attempts, 0 - unlimited "
+               "(default: 10)\n"
                " -1,   --client1           send request as client#1 (default)\n"
                " -2,   --client2           send request as client#2\n"
                " [uuid] [address:port]\n";
@@ -176,6 +187,9 @@ int main(int argc, char *argv[]) {
   const auto settings = ParseArgs(argc, argv);
 
   size_t unix_timestamp = std::chrono::seconds(std::time(nullptr)).count();
+  std::random_device rd;
+  std::mt19937 rndgen(rd());
+  std::uniform_int_distribution<> uni_distrib(-1000, 1000);
 
   int sockfd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
   if (sockfd == -1) {
@@ -217,11 +231,11 @@ int main(int argc, char *argv[]) {
 
   sockaddr_in recv_addr{};
   socklen_t recv_addr_len = sizeof(recv_addr);
-  int tries = 0;
+  size_t tries = 1;
 
   while (1) {
     pollfd pfd = {.fd = sockfd, .events = POLLIN, .revents = 255};
-    auto res = poll(&pfd, 1, 10000);
+    auto res = poll(&pfd, 1, 5000 + uni_distrib(rndgen));
     if (res > 0) {
       if (pfd.events & POLLIN) {
         ssize_t received = recvfrom(sockfd, buf, sizeof(buf), 0,
@@ -286,7 +300,12 @@ int main(int argc, char *argv[]) {
         break;
       }
     } else if (res == 0) {
-      std::cout << "try " << ++tries << ", repeat..." << std::endl;
+      if (settings.tries > 0 && tries >= settings.tries) {
+        std::cout << "attempt " << tries << ", limit reached, stopping" << std::endl;
+        exit(EXIT_FAILURE);
+      }
+
+      std::cout << "attempt " << tries++ << ", repeat..." << std::endl;
 
       if (sendto(sockfd, &msg_req, sizeof(msg_req), 0,
                  (sockaddr *)&settings.connect_addr,
@@ -310,8 +329,6 @@ int main(int argc, char *argv[]) {
   }
 
   close(sockfd);
-
-  // std::cout << "Check finished" << std::endl;
 
   return EXIT_SUCCESS;
 }
