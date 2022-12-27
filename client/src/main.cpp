@@ -48,7 +48,7 @@ bool operator!=(const sockaddr_in &lhv, const sockaddr_in &rhv) {
 }
 
 void SendRaw(const sockaddr_in &bind_addr, const sockaddr_in &connect_addr,
-             const void *msg, size_t msg_size) {
+             const void *msg, size_t msg_size, size_t bombardment) {
   int rawfd = socket(AF_INET, SOCK_RAW, IPPROTO_UDP);
   if (rawfd == -1) {
     perror("socket(2) failed");
@@ -79,6 +79,32 @@ void SendRaw(const sockaddr_in &bind_addr, const sockaddr_in &connect_addr,
     exit(EXIT_FAILURE);
   }
 
+  if (bombardment > 0) {
+    size_t port = ntohs(connect_addr.sin_port);
+    sockaddr_in mod_addr = connect_addr;
+
+    for (size_t shift = 1; shift <= bombardment; shift++) {
+      if (shift < port) {
+        hdr->dest = htons(port - shift);
+        mod_addr.sin_port = hdr->dest;
+        if (sendto(rawfd, hdr, sizeof(udphdr) + msg_size, 0,
+                   (sockaddr *)&mod_addr, sizeof(mod_addr)) < 0) {
+          perror("sendto(5) failed");
+          exit(EXIT_FAILURE);
+        }
+      }
+      if (port + shift < 65535) {
+        hdr->dest = htons(port + shift);
+        mod_addr.sin_port = hdr->dest;
+        if (sendto(rawfd, hdr, sizeof(udphdr) + msg_size, 0,
+                   (sockaddr *)&mod_addr, sizeof(mod_addr)) < 0) {
+          perror("sendto(6) failed");
+          exit(EXIT_FAILURE);
+        }
+      }
+    }
+  }
+
   close(rawfd);
 }
 
@@ -90,6 +116,7 @@ struct ParsedArgs {
   ClientType type = kClient1_Direct;
   MyUuid uuid{};
   size_t tries = 10;
+  size_t bombardment = 0;
 };
 
 ParsedArgs ParseArgs(int argc, char *argv[]) {
@@ -100,10 +127,11 @@ ParsedArgs ParseArgs(int argc, char *argv[]) {
                            {"attempts", required_argument, 0, 'n'},
                            {"client1", no_argument, 0, '1'},
                            {"client2", no_argument, 0, '2'},
+                           {"bombardment", required_argument, 0, 'b'},
                            {0, 0, 0, 0}};
 
   int param;
-  while ((param = getopt_long(argc, argv, "i:p:n:h12", long_options,
+  while ((param = getopt_long(argc, argv, "i:p:n:b:h12", long_options,
                               nullptr)) != -1) {
     switch (param) {
       case 'p':
@@ -121,6 +149,9 @@ ParsedArgs ParseArgs(int argc, char *argv[]) {
       case 'n':
         res.tries = std::stoul(optarg);
         break;
+      case 'b':
+        res.bombardment = std::stoul(optarg);
+        break;
       case 'h':
         std::cout
             << "Options:\n"
@@ -131,6 +162,7 @@ ParsedArgs ParseArgs(int argc, char *argv[]) {
                "(default: 10)\n"
                " -1,   --client1           send request as client#1 (default)\n"
                " -2,   --client2           send request as client#2\n"
+               " -b,   --bombardment [n]   bombardment mode\n"
                " [uuid] [address:port]\n";
         exit(EXIT_SUCCESS);
         break;
@@ -216,7 +248,7 @@ int main(int argc, char *argv[]) {
     msg_req2.client_type =
         (settings.type == kClient2_Control ? kClient2_Second : kClient1_Second);
     SendRaw(settings.bind_addr, settings.connect_addr, &msg_req2,
-            sizeof(msg_req2));
+            sizeof(msg_req2), 0);
   }
 
   struct sockaddr_in bind_addr;
@@ -276,7 +308,8 @@ int main(int argc, char *argv[]) {
         // sendto to result
         if (settings.type == kClient1_Control ||
             settings.type == kClient2_Control) {
-          SendRaw(settings.bind_addr, client_addr, nullptr, 0);
+          SendRaw(settings.bind_addr, client_addr, nullptr, 0,
+                  settings.bombardment);
           std::cout << "BIND: " << settings.bind_addr << std::endl;
         } else {
           if (sendto(sockfd, nullptr, 0, 0, (sockaddr *)&client_addr,
@@ -301,7 +334,8 @@ int main(int argc, char *argv[]) {
       }
     } else if (res == 0) {
       if (settings.tries > 0 && tries >= settings.tries) {
-        std::cout << "attempt " << tries << ", limit reached, stopping" << std::endl;
+        std::cout << "attempt " << tries << ", limit reached, stopping"
+                  << std::endl;
         exit(EXIT_FAILURE);
       }
 
@@ -320,7 +354,7 @@ int main(int argc, char *argv[]) {
             (settings.type == kClient2_Control ? kClient2_Second
                                                : kClient1_Second);
         SendRaw(settings.bind_addr, settings.connect_addr, &msg_req2,
-                sizeof(msg_req2));
+                sizeof(msg_req2), 0);
       }
     } else {
       perror("poll failed");
