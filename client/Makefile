@@ -1,23 +1,23 @@
-#
 # A simple makefile for compiling a c++ project
-#
-SRC=./src
-TARGET=./out
-GCC = g++
-CFLAGS = -o $(TARGET)/udphp_client -std=c++20 -Wall -I ../include -luuid
-#ARGS = 101
-RM = rm -rf
+SRCDIR = ./src
+TARGETDIR = ./out
+TARGETNAME = udphp-client
+CXX = g++
+CXXFLAGS += -std=c++20 -Wall -O2 -I ../include
+LDFLAGS += -luuid
 
-all: clean build# test
+OBJS = $(patsubst $(SRCDIR)/%.cpp,$(TARGETDIR)/%.o,$(wildcard $(SRCDIR)/*.cpp))
 
-build: main.cpp
+all: $(TARGETDIR) $(TARGETDIR)/$(TARGETNAME)
 
-main.cpp:
-	mkdir -p $(TARGET)
-	$(GCC) $(SRC)/main.cpp $(CFLAGS)
+$(TARGETDIR):
+	mkdir -p $(TARGETDIR)
 
-# test: main.cpp
-#     $(TARGET)/test_raw $(ARGS)
+$(TARGETDIR)/$(TARGETNAME): $(OBJS)
+	$(CXX) -o $@ $^ $(LDFLAGS)
+
+$(TARGETDIR)/%.o: $(SRCDIR)/%.cpp
+	$(CXX) -c -o $@ $< $(CXXFLAGS)
 
 clean:
-	$(RM) $(TARGET)/*.o
+	rm -f $(TARGETDIR)/*.o $(TARGETDIR)/$(TARGETNAME)

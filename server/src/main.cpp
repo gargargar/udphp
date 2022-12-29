@@ -17,7 +17,7 @@
 
 #include "protocol.hpp"
 
-constexpr size_t kMaxPairs = 1000;
+constexpr size_t kMaxPairs = 10000;
 
 using MyUuid = std::array<char, 16>;
 
