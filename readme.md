@@ -1,5 +1,5 @@
 ## Description
-udphp is UDP protocol hole punching tool, main goal to establish direct connection between two sides behind GCNAT or inaccessible NAT servers. Main reason for its creation was to connect 2 home networks via Wireguard VPN, as our ISP providers use CGNAT and no way you can open ports (you don't have true IP address at all).
+udphp is UDP protocol hole punching tool, main goal to establish direct connection between two hosts behind GCNAT or inaccessible NAT servers. Main reason for its creation was to connect 2 home networks via Wireguard VPN, as our ISP providers use CGNAT and no way you can open ports (you don't have true IP address at all).
 
 If you launch udphp-client simultaneously on two your computers, they build direct connection between them, for such task they use udphp-server (you can use our **garsoftware.com:7867**, but it has limited resources and not guaranteed to work at all, or you can launch your own one), udphp-server is signaling server for connection establishing only, after connection creation it's not used anymore. udphp-client find counterpart by given unique uuid, it replaces dynamic dns creation and registration.
 
@@ -18,11 +18,11 @@ If you launch udphp-client simultaneously on two your computers, they build dire
 
 some clarification:
 
-**uuid** is your unique uuid, it must be same on 2 sides for connection establishment, just generate some for distint your connection pair, you can use https://www.uuidgenerator.net/
+**uuid** is your unique uuid, it must be same on two sides for connection establishment, just generate some to distint your connection pair, you can use https://www.uuidgenerator.net/
 
 use **-1** for distinct request from first client, and **-2** for second one.
 
-each connection attempt takes 4-6 seconds, and multiplying attempts (-n) to 4-6 you have approximate maximum connection time.
+each connection attempt takes 4-6 seconds, and multiplying attempts (**-n**) to 4-6 you have approximate maximum connection time.
 
 **bombardment** is experimental mode for breaking through some specific [Endpoint-Dependent Mapping](https://www.ietf.org/rfc/rfc5128.txt) NAT servers, udphp-client not just connect to specific port, but to range of ports [port - bombardment, port + bombardment]
 
@@ -48,7 +48,7 @@ On computer#2 launch:
 
     udphp-client 95a14e53-57a4-4bd8-be04-ac310ba6e0ee garsoftware.com:7867 -2
 
-**95a14e53-57a4-4bd8-be04-ac310ba6e0ee** is your unique uuid. **garsoftware.com:7867** address of signaling udphp-server
+**95a14e53-57a4-4bd8-be04-ac310ba6e0ee** is your unique uuid, **garsoftware.com:7867** address of signaling udphp-server
 
 You see results like this on each computer (with different IP/ports):
 
@@ -62,7 +62,7 @@ You see results like this on each computer (with different IP/ports):
 
 ---
 ## Example #2
-Establish connection on already opened port (ex. Wireguard)
+Establish connection on already opened and used port (ex. Wireguard)
 
 On computer#1 launch:
 
@@ -70,9 +70,9 @@ On computer#1 launch:
 
 On computer#2 launch:
 
-    udphp-client 95a14e53-57a4-4bd8-be04-ac310ba6e0ee garsoftware.com:7867 -2 -p 31820
+    udphp-client 95a14e53-57a4-4bd8-be04-ac310ba6e0ee garsoftware.com:7867 -2 -p 51820
 
-**95a14e53-57a4-4bd8-be04-ac310ba6e0ee** is your unique uuid. **garsoftware.com:7867** address of signaling udphp-server. **-p 51820** is port you want to bind to (can be different on each side), in most cases this port already used by some application (it's not a problem, udphp-client can simultaneously use port with other application).
+**95a14e53-57a4-4bd8-be04-ac310ba6e0ee** is your unique uuid, **garsoftware.com:7867** address of signaling udphp-server, **-p 51820** is port you want to bind to (can be different on each side), in most cases this port already used by some application (it's not a problem, udphp-client transparently use port with other application).
 
 You see results like this on each computer (with different IP/ports):
 
