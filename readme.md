@@ -88,7 +88,7 @@ You see results like this on each computer (with different IP/ports):
 
 ---
 ## Example #3
-Real example for Wireguard, you need to have already set up Wiregueard (one server without endpoint set, and other client with endpoint to server, you don't know ip/port yet)
+Real example for Wireguard, you need to have already set up Wireguard (one server without endpoint set, and other client with endpoint to server, you don't know ip/port yet)
 
 On server Wireguard add to crontab this shell script (/root/wgcheck.sh):
 
