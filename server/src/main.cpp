@@ -8,6 +8,7 @@
 #include <unistd.h>
 #include <uuid/uuid.h>
 
+#include <array>
 #include <chrono>
 #include <cstring>
 #include <iostream>
